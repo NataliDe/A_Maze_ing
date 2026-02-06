@@ -136,8 +136,8 @@ C6C6D46C6EC7ED547EC6C7ED56C56E"
         'my_way': way,
         'draw_args': (mlx, mlx_pointer, window, image, tab_str, size_line, scale, image_address, start, exit, path)
     }
-    mlx.mlx_string_put(mlx_pointer, window, 50, 760, 0xFFFFFFFF, "DUPA")
-    mlx.mlx_string_put(mlx_pointer, window, 50, 770, 0xFFFFFFFF, "DUPA")
+    mlx.mlx_string_put(mlx_pointer, window, 50, 760, 0xFFFFFFFF, "Opis ")
+    mlx.mlx_string_put(mlx_pointer, window, 50, 770, 0xFFFFFFFF, "Opis")
 
     mlx.mlx_key_hook(window, key_hooks, arguments)
     mlx.mlx_loop(mlx_pointer)
@@ -145,3 +145,4 @@ C6C6D46C6EC7ED547EC6C7ED56C56E"
 
 if __name__ == "__main__":
     main()
+
