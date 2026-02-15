@@ -8,18 +8,12 @@ Style:
     walls '#', start 'S', finish 'F', solution '.'
 - uni:
     walls '█',
-    start/finish SAME char '■' but different colors,
-    solution also '■' with SOLUTION color.
+    start/finish '■' (same char, different colors),
+    solution '■',
+    forbidden ("42") drawn as '▓' (plus FORBIDDEN color)
 
 Colors (from theme):
-- WALL
-- SOLUTION
-- FORBIDDEN
-- START
-- END
-- RESET
-
-Forbidden ("42") is rendered as solid 3x3 blocks and colored FORBIDDEN.
+- WALL, SOLUTION, FORBIDDEN, START, END, RESET
 """
 
 from __future__ import annotations
@@ -87,9 +81,13 @@ class Renderer:
     def _wall_char(self) -> str:
         return "█" if self._is_uni() else "#"
 
+    def _forbidden_char(self) -> str:
+        """Character used for the '42' forbidden area."""
+        return "░" if self._is_uni() else "#"
+
     def _start_end_markers(self) -> Tuple[str, str]:
         if self._is_uni():
-            return ("■", "■")  # same marker, colored by position
+            return ("■", "♥")
         return ("S", "F")
 
     def _solution_marker(self) -> str:
@@ -156,6 +154,7 @@ class Renderer:
             canvas=canvas,
             forbidden_wall_positions=forbidden_wall_positions,
             wall_char=wall,
+            forbidden_char=self._forbidden_char(),
             solution_marker=sol_m,
             start_marker=start_m,
             end_marker=end_m,
@@ -186,7 +185,6 @@ class Renderer:
         solution: List[Cell],
         solution_marker: str,
     ) -> None:
-        """Mark solution cells and connectors with solution_marker."""
         if len(solution) < 2:
             return
 
@@ -214,6 +212,7 @@ class Renderer:
         canvas: List[List[str]],
         forbidden_wall_positions: Set[Tuple[int, int]],
         wall_char: str,
+        forbidden_char: str,
         solution_marker: str,
         start_marker: str,
         end_marker: str,
@@ -234,7 +233,8 @@ class Renderer:
             for x, ch in enumerate(row):
                 if ch == wall_char:
                     if (y, x) in forbidden_wall_positions:
-                        out.append(f"{forb_c}{ch}{reset}")
+                        # draw forbidden with its own CHAR + color
+                        out.append(f"{forb_c}{forbidden_char}{reset}")
                     else:
                         out.append(f"{wall_c}{ch}{reset}")
                 elif (x, y) == start_pos and ch == start_marker:

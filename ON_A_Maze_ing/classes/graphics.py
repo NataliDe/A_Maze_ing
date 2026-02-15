@@ -75,7 +75,7 @@ class Graphics:
         self._style_keys = tuple(self.SYMBOLS_STYLES.keys())
         self._theme_keys = tuple(self.COLORS_STYLES.keys())
 
-        self._style_idx = 0
+        self._style_idx = self._style_keys.index("ascii")
         self._theme_idx = 0
 
         self.current_style_name = self._style_keys[self._style_idx]
