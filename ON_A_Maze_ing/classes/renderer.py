@@ -3,16 +3,13 @@ Renderer module.
 
 Crisp maze rendering using a 2W+1 x 2H+1 grid.
 
-Style:
-- ascii:
-    walls '#', start 'S', finish 'F', solution '.'
-- uni:
-    walls '█',
-    start/finish '■' (same char, different colors),
-    solution '■',
-    forbidden ("42") drawn as '▓' (plus FORBIDDEN color)
+Fix terminal aspect ratio:
+- In UNI style we render each cell horizontally doubled to look more square:
+  wall -> '██', empty -> '  ', solution -> '██', forbidden -> '▓▓'
+- In ASCII style we keep single-width output to match
+"Terminal ASCII rendering".
 
-Colors (from theme):
+Colors:
 - WALL, SOLUTION, FORBIDDEN, START, END, RESET
 """
 
@@ -32,8 +29,6 @@ CanvasPos = Tuple[int, int]  # (x, y)
 
 class Renderer:
     """Terminal renderer for maze + menu using crisp grid style."""
-
-    EMPTY_CHAR: str = " "
 
     def __init__(self, grafix_module: Graphics, menu_module: Menu) -> None:
         self.gfx: Graphics = grafix_module
@@ -78,20 +73,40 @@ class Renderer:
     def _is_uni(self) -> bool:
         return self.gfx.current_style_name == "uni"
 
+    # --- glyphs as single "cells" in the internal canvas ---
     def _wall_char(self) -> str:
         return "█" if self._is_uni() else "#"
 
     def _forbidden_char(self) -> str:
-        """Character used for the '42' forbidden area."""
-        return "░" if self._is_uni() else "#"
+        return "♥" if self._is_uni() else "#"
 
-    def _start_end_markers(self) -> Tuple[str, str]:
-        if self._is_uni():
-            return ("■", "♥")
-        return ("S", "F")
+    def _solution_char(self) -> str:
+        return "░" if self._is_uni() else "."
 
-    def _solution_marker(self) -> str:
-        return "⋄" if self._is_uni() else "."
+    def _start_end_chars(self) -> Tuple[str, str]:
+        # same char in UNI, colored by position
+        return ("1", "2") if self._is_uni() else ("S", "F")
+
+    def _empty_char(self) -> str:
+        return " "
+
+    # --- horizontal scaling ---
+    def _px(self, ch: str) -> str:
+        """
+        Convert one canvas character into an output pixel string.
+
+        UNI: double width (2 chars) for square look.
+        ASCII: keep 1 char.
+        """
+        if not self._is_uni():
+            return ch
+        if ch == '2':
+            return "▓▓"  # 🏆
+        if ch == '1':
+            return "▒▒"  # ▒🏓
+        if ch == " ":
+            return "  "
+        return ch * 2
 
     def _build_maze_lines(
         self,
@@ -104,8 +119,10 @@ class Renderer:
         out_w = 2 * w + 1
 
         wall = self._wall_char()
-        start_m, end_m = self._start_end_markers()
-        sol_m = self._solution_marker()
+        forb = self._forbidden_char()
+        sol = self._solution_char()
+        start_m, end_m = self._start_end_chars()
+        empty = self._empty_char()
 
         canvas: List[List[str]] = [
             [wall for _ in range(out_w)] for _ in range(out_h)]
@@ -127,19 +144,19 @@ class Renderer:
                     )
                     continue
 
-                canvas[cy][cx] = self.EMPTY_CHAR
+                canvas[cy][cx] = empty
 
                 if cell.paths.get("north", True) is False:
-                    canvas[cy - 1][cx] = self.EMPTY_CHAR
+                    canvas[cy - 1][cx] = empty
                 if cell.paths.get("south", True) is False:
-                    canvas[cy + 1][cx] = self.EMPTY_CHAR
+                    canvas[cy + 1][cx] = empty
                 if cell.paths.get("west", True) is False:
-                    canvas[cy][cx - 1] = self.EMPTY_CHAR
+                    canvas[cy][cx - 1] = empty
                 if cell.paths.get("east", True) is False:
-                    canvas[cy][cx + 1] = self.EMPTY_CHAR
+                    canvas[cy][cx + 1] = empty
 
         if is_path_visible and solution:
-            self._draw_solution(canvas, solution, sol_m)
+            self._draw_solution(canvas, solution, sol, empty)
 
         sx, sy = self._find_start(grid)
         ex, ey = self._find_exit(grid)
@@ -154,10 +171,11 @@ class Renderer:
             canvas=canvas,
             forbidden_wall_positions=forbidden_wall_positions,
             wall_char=wall,
-            forbidden_char=self._forbidden_char(),
-            solution_marker=sol_m,
-            start_marker=start_m,
-            end_marker=end_m,
+            forbidden_char=forb,
+            solution_char=sol,
+            start_char=start_m,
+            end_char=end_m,
+            empty_char=empty,
             start_pos=start_pos,
             end_pos=end_pos,
         )
@@ -170,7 +188,6 @@ class Renderer:
         max_x: int,
         max_y: int,
     ) -> None:
-        """Mark a solid 3x3 block centered at (cx, cy) as forbidden."""
         for yy in range(cy - 1, cy + 2):
             if yy < 0 or yy > max_y:
                 continue
@@ -183,7 +200,8 @@ class Renderer:
         self,
         canvas: List[List[str]],
         solution: List[Cell],
-        solution_marker: str,
+        sol_char: str,
+        empty_char: str,
     ) -> None:
         if len(solution) < 2:
             return
@@ -197,15 +215,15 @@ class Renderer:
             bx = 2 * b.cell_x + 1
             by = 2 * b.cell_y + 1
 
-            if canvas[ay][ax] == self.EMPTY_CHAR:
-                canvas[ay][ax] = solution_marker
-            if canvas[by][bx] == self.EMPTY_CHAR:
-                canvas[by][bx] = solution_marker
+            if canvas[ay][ax] == empty_char:
+                canvas[ay][ax] = sol_char
+            if canvas[by][bx] == empty_char:
+                canvas[by][bx] = sol_char
 
             mx = (ax + bx) // 2
             my = (ay + by) // 2
-            if canvas[my][mx] == self.EMPTY_CHAR:
-                canvas[my][mx] = solution_marker
+            if canvas[my][mx] == empty_char:
+                canvas[my][mx] = sol_char
 
     def _colorize_canvas(
         self,
@@ -213,9 +231,10 @@ class Renderer:
         forbidden_wall_positions: Set[Tuple[int, int]],
         wall_char: str,
         forbidden_char: str,
-        solution_marker: str,
-        start_marker: str,
-        end_marker: str,
+        solution_char: str,
+        start_char: str,
+        end_char: str,
+        empty_char: str,
         start_pos: CanvasPos,
         end_pos: CanvasPos,
     ) -> List[str]:
@@ -233,18 +252,20 @@ class Renderer:
             for x, ch in enumerate(row):
                 if ch == wall_char:
                     if (y, x) in forbidden_wall_positions:
-                        # draw forbidden with its own CHAR + color
-                        out.append(f"{forb_c}{forbidden_char}{reset}")
+                        out.append(
+                            f"{forb_c}{self._px(forbidden_char)}{reset}")
                     else:
-                        out.append(f"{wall_c}{ch}{reset}")
-                elif (x, y) == start_pos and ch == start_marker:
-                    out.append(f"{start_c}{ch}{reset}")
-                elif (x, y) == end_pos and ch == end_marker:
-                    out.append(f"{end_c}{ch}{reset}")
-                elif ch == solution_marker:
-                    out.append(f"{sol_c}{ch}{reset}")
+                        out.append(f"{wall_c}{self._px(wall_char)}{reset}")
+                elif (x, y) == start_pos and ch == start_char:
+                    out.append(f"{start_c}{self._px(start_char)}{reset}")
+                elif (x, y) == end_pos and ch == end_char:
+                    out.append(f"{end_c}{self._px(end_char)}{reset}")
+                elif ch == solution_char:
+                    out.append(f"{sol_c}{self._px(solution_char)}{reset}")
+                elif ch == empty_char:
+                    out.append(self._px(empty_char))
                 else:
-                    out.append(ch)
+                    out.append(self._px(ch))
             lines.append("".join(out))
         return lines
 
