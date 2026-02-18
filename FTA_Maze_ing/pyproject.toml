@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "A-Maze-ing"
+version = "0.1"
+description = "A labyrinth is not a place to be lost, but a path to be found."
+authors = [
+    "ndemkiv <ndemkiv@student.42warsaw.pl>",
+    "okruhlia <okruhlia@student.42warsaw.pl>"
+]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
