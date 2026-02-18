@@ -1,7 +1,7 @@
 """
 mlx_viewer.py
 
-MLX viewer for maze.txt output.
+MLX viewer for maze.txt output with AUTO-SCALE, padding, and centering.
 
 Reads maze.txt in Moulinette format:
 - H lines of W hex characters
@@ -16,6 +16,7 @@ Controls:
 - SPACE: randomize wall color
 """
 
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,13 @@ class MazeTxtData:
 class MlxViewer:
     """Visualize maze.txt in an MLX window."""
 
+    # Window defaults (safe for most screens)
+    _WIN_W = 1200
+    _WIN_H = 800
+    _UI_H = 60            # bottom text area height
+    _PADDING = 20         # outer padding for maze area
+    _MIN_SCALE = 2        # smallest cell size in pixels
+
     def __init__(self) -> None:
         self._mlx = Mlx()
 
@@ -56,14 +64,20 @@ class MlxViewer:
 
         mlx_ptr = self._mlx.mlx_init()
 
-        win_w, win_h = 1500, 800
-        img_h = win_h - 50
+        win_w = self._WIN_W
+        win_h = self._WIN_H
+        img_h = win_h - self._UI_H
 
         window = self._mlx.mlx_new_window(mlx_ptr, win_w, win_h, "A-MAZE-ING (MLX)")
         image = self._mlx.mlx_new_image(mlx_ptr, win_w, img_h)
         image_address, _bpp, size_line, _fmt = self._mlx.mlx_get_data_addr(image)
 
-        scale = self._compute_scale(win_w, img_h, config.maze_width, config.maze_height)
+        layout = self._compute_layout(
+            win_w=win_w,
+            img_h=img_h,
+            grid_w=config.maze_width,
+            grid_h=config.maze_height,
+        )
         path_coords = self._path_to_coords(data.entry, data.path_dirs)
 
         state: Dict[str, object] = {
@@ -72,7 +86,9 @@ class MlxViewer:
             "image": image,
             "image_address": image_address,
             "size_line": int(size_line),
-            "scale": int(scale),
+            "scale": int(layout["scale"]),
+            "off_x": int(layout["off_x"]),
+            "off_y": int(layout["off_y"]),
             "hex_rows": data.hex_rows,
             "entry": data.entry,
             "exit": data.exit,
@@ -87,13 +103,48 @@ class MlxViewer:
             mlx_ptr,
             window,
             20,
-            img_h + 5,
+            img_h + 10,
             0xFFFFFFFF,
             "ESC: quit | ENTER: toggle path | SPACE: random wall color",
+        )
+        self._mlx.mlx_string_put(
+            mlx_ptr,
+            window,
+            20,
+            img_h + 30,
+            0xFFFFFFFF,
+            f"scale={state['scale']} offset=({state['off_x']},{state['off_y']})",
         )
 
         self._mlx.mlx_key_hook(window, self._on_key, state)
         self._mlx.mlx_loop(mlx_ptr)
+
+    # ---------------- layout / autoscale ----------------
+
+    def _compute_layout(self, win_w: int, img_h: int, grid_w: int, grid_h: int) -> Dict[str, int]:
+        """
+        Compute scale + offsets so the whole maze fits with padding and is centered.
+
+        We draw maze inside the image area (win_w x img_h).
+        Each cell is scale x scale pixels.
+        """
+        usable_w = max(1, win_w - 2 * self._PADDING)
+        usable_h = max(1, img_h - 2 * self._PADDING)
+
+        # scale to fit
+        scale_w = usable_w // max(1, grid_w)
+        scale_h = usable_h // max(1, grid_h)
+        scale = max(self._MIN_SCALE, min(scale_w, scale_h))
+
+        # actual drawn area
+        draw_w = grid_w * scale
+        draw_h = grid_h * scale
+
+        # center inside usable rect
+        off_x = self._PADDING + max(0, (usable_w - draw_w) // 2)
+        off_y = self._PADDING + max(0, (usable_h - draw_h) // 2)
+
+        return {"scale": scale, "off_x": off_x, "off_y": off_y}
 
     # ---------------- parsing ----------------
 
@@ -138,13 +189,6 @@ class MlxViewer:
     # ---------------- helpers ----------------
 
     @staticmethod
-    def _compute_scale(win_w: int, img_h: int, w: int, h: int) -> int:
-        # fit W x H blocks into window
-        scale_h = max(1, img_h // max(1, h))
-        scale_w = max(1, win_w // max(1, w))
-        return max(2, min(scale_h, scale_w))
-
-    @staticmethod
     def _path_to_coords(start: Coord, path_dirs: str) -> List[Coord]:
         coords: List[Coord] = [start]
         for ch in path_dirs:
@@ -165,20 +209,17 @@ class MlxViewer:
         mlx_ptr = state["mlx_ptr"]
         window = state["window"]
 
-        # ESC
-        if keycode == 65307:
+        if keycode == 65307:  # ESC
             self._mlx.mlx_destroy_window(mlx_ptr, window)
             self._mlx.mlx_loop_exit(mlx_ptr)
             return
 
-        # SPACE -> random wall color
-        if keycode == 32:
+        if keycode == 32:  # SPACE -> random wall color
             state["wall_color"] = bytes(
                 [randint(0, 255), randint(0, 255), randint(0, 255), 255]
             )
 
-        # ENTER -> toggle path
-        if keycode == 65293:
+        if keycode == 65293:  # ENTER -> toggle path
             state["show_path"] = not bool(state["show_path"])
 
         self._draw(state)
@@ -191,13 +232,17 @@ class MlxViewer:
         image = state["image"]
         image_address = state["image_address"]
         size_line = int(state["size_line"])
+
         scale = int(state["scale"])
-        hex_rows = state["hex_rows"]
-        entry = state["entry"]
-        exit_ = state["exit"]
-        path = state["path"]
+        off_x = int(state["off_x"])
+        off_y = int(state["off_y"])
+
+        hex_rows: List[str] = state["hex_rows"]  # type: ignore[assignment]
+        entry: Coord = state["entry"]  # type: ignore[assignment]
+        exit_: Coord = state["exit"]  # type: ignore[assignment]
+        path: List[Coord] = state["path"]  # type: ignore[assignment]
         show_path = bool(state["show_path"])
-        wall_color = state["wall_color"]
+        wall_color: bytes = state["wall_color"]  # type: ignore[assignment]
 
         # clear (black)
         image_address[:] = bytes([0, 0, 0, 255]) * (len(image_address) // 4)
@@ -205,31 +250,53 @@ class MlxViewer:
         # path (cyan)
         if show_path:
             for px, py in path:
-                self._fill_cell(image_address, scale, size_line, px, py, bytes([0, 255, 255, 255]))
+                self._fill_cell(image_address, scale, size_line, px, py, off_x, off_y,
+                                bytes([0, 255, 255, 255]))
 
         # start (red) / end (green)
-        self._fill_cell(image_address, scale, size_line, entry[0], entry[1], bytes([255, 0, 0, 255]))
-        self._fill_cell(image_address, scale, size_line, exit_[0], exit_[1], bytes([0, 255, 0, 255]))
+        self._fill_cell(image_address, scale, size_line, entry[0], entry[1], off_x, off_y,
+                        bytes([255, 0, 0, 255]))
+        self._fill_cell(image_address, scale, size_line, exit_[0], exit_[1], off_x, off_y,
+                        bytes([0, 255, 0, 255]))
 
         # forbidden cells (F) - purple
         for row_idx, row in enumerate(hex_rows):
             for col_idx, ch in enumerate(row):
                 if ch.upper() == "F":
-                    self._fill_cell(image_address, scale, size_line, col_idx, row_idx, bytes([150, 0, 255, 255]))
+                    self._fill_cell(image_address, scale, size_line, col_idx, row_idx, off_x, off_y,
+                                    bytes([150, 0, 255, 255]))
 
         # walls from hex
         for row_idx, row in enumerate(hex_rows):
             for col_idx, ch in enumerate(row):
-                self._draw_walls(ch, row_idx, col_idx, size_line, scale, image_address, wall_color)
+                self._draw_walls(
+                    block_hex=ch,
+                    row_idx=row_idx,
+                    col_idx=col_idx,
+                    size_line=size_line,
+                    scale=scale,
+                    image_address=image_address,
+                    color=wall_color,
+                    off_x=off_x,
+                    off_y=off_y,
+                )
 
         self._mlx.mlx_put_image_to_window(mlx_ptr, window, image, 0, 0)
 
     @staticmethod
-    def _fill_cell(image_address, scale: int, size_line: int, x: int, y: int, color: bytes) -> None:
-        off_x = scale * x * 4
-        off_y = scale * size_line * y
+    def _fill_cell(image_address, scale: int, size_line: int, x: int, y: int,
+                   off_x: int, off_y: int, color: bytes) -> None:
+        """
+        Fill a scale x scale block at cell coordinates (x, y) with an offset.
+        """
+        px = off_x + x * scale
+        py = off_y + y * scale
+
+        base_x = px * 4
+        base_y = py * size_line
+
         for i in range(scale):
-            start = off_x + off_y + i * size_line
+            start = base_x + base_y + i * size_line
             image_address[start:start + scale * 4] = color * scale
 
     @staticmethod
@@ -241,6 +308,8 @@ class MlxViewer:
         scale: int,
         image_address,
         color: bytes,
+        off_x: int,
+        off_y: int,
     ) -> None:
         """
         Draw walls for a cell using bits (WALLS):
@@ -256,23 +325,26 @@ class MlxViewer:
         has_s = (val & 4) != 0
         has_w = (val & 8) != 0
 
-        off_x = scale * col_idx * 4
-        off_y = scale * size_line * row_idx
+        px = off_x + col_idx * scale
+        py = off_y + row_idx * scale
+
+        base_x = px * 4
+        base_y = py * size_line
 
         # north
         if has_n:
-            image_address[off_x + off_y:off_x + off_y + scale * 4] = color * scale
+            image_address[base_x + base_y:base_x + base_y + scale * 4] = color * scale
 
         # south
         if has_s:
-            base = off_y + (scale - 1) * size_line
-            image_address[off_x + base:off_x + base + scale * 4] = color * scale
+            bottom_y = base_y + (scale - 1) * size_line
+            image_address[base_x + bottom_y:base_x + bottom_y + scale * 4] = color * scale
 
         # west/east
         for i in range(scale):
-            line_base = off_y + i * size_line
+            line_base = base_y + i * size_line
             if has_w:
-                image_address[off_x + line_base:off_x + line_base + 4] = color
+                image_address[base_x + line_base:base_x + line_base + 4] = color
             if has_e:
-                edge = off_x + line_base + (scale - 1) * 4
+                edge = base_x + line_base + (scale - 1) * 4
                 image_address[edge:edge + 4] = color
