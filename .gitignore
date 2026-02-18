@@ -1,0 +1,6 @@
+# Кеш компілятора Python
+__pycache__/
+*.py[cod]
+
+# Мої специфічні файли
+.Identifier
