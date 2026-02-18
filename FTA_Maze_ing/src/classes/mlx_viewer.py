@@ -2,6 +2,7 @@
 mlx_viewer.py
 
 MLX viewer for maze.txt output with AUTO-SCALE, padding, and centering.
+Lazy-loads MLX so the project can run even if MLX is not available.
 
 Reads maze.txt in Moulinette format:
 - H lines of W hex characters
@@ -16,14 +17,11 @@ Controls:
 - SPACE: randomize wall color
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from random import randint
 from typing import Dict, List, Tuple
-
-from mlx import Mlx
 
 from .maze_config import MazeConfig
 
@@ -40,7 +38,7 @@ class MazeTxtData:
 
 
 class MlxViewer:
-    """Visualize maze.txt in an MLX window."""
+    """Visualize maze.txt in an MLX window (lazy init)."""
 
     # Window defaults (safe for most screens)
     _WIN_W = 1200
@@ -50,7 +48,35 @@ class MlxViewer:
     _MIN_SCALE = 2        # smallest cell size in pixels
 
     def __init__(self) -> None:
-        self._mlx = Mlx()
+        self._mlx = None  # initialized lazily
+
+    def _get_mlx(self):
+        """
+        Lazy-load MLX so terminal version works even without MLX.
+
+        Raises:
+            RuntimeError: if MLX module or shared library cannot be loaded.
+        """
+        if self._mlx is not None:
+            return self._mlx
+
+        try:
+            from mlx import Mlx  # local import by design
+        except Exception as exc:
+            raise RuntimeError(
+                "MLX python module is not available. "
+                "Install/compile MLX first (Linux recommended)."
+            ) from exc
+
+        try:
+            self._mlx = Mlx()
+        except OSError as exc:
+            raise RuntimeError(
+                "MLX shared library failed to load (ctypes CDLL). "
+                "Missing libmlx.so / wrong path / missing system deps."
+            ) from exc
+
+        return self._mlx
 
     def open_from_txt(self, config: MazeConfig) -> None:
         """
@@ -62,15 +88,16 @@ class MlxViewer:
         maze_path = Path(config.output_file_name)
         data = self._read_maze_txt(maze_path, config.maze_width, config.maze_height)
 
-        mlx_ptr = self._mlx.mlx_init()
+        mlx = self._get_mlx()
+        mlx_ptr = mlx.mlx_init()
 
         win_w = self._WIN_W
         win_h = self._WIN_H
         img_h = win_h - self._UI_H
 
-        window = self._mlx.mlx_new_window(mlx_ptr, win_w, win_h, "A-MAZE-ING (MLX)")
-        image = self._mlx.mlx_new_image(mlx_ptr, win_w, img_h)
-        image_address, _bpp, size_line, _fmt = self._mlx.mlx_get_data_addr(image)
+        window = mlx.mlx_new_window(mlx_ptr, win_w, win_h, "A-MAZE-ING (MLX)")
+        image = mlx.mlx_new_image(mlx_ptr, win_w, img_h)
+        image_address, _bpp, size_line, _fmt = mlx.mlx_get_data_addr(image)
 
         layout = self._compute_layout(
             win_w=win_w,
@@ -81,6 +108,7 @@ class MlxViewer:
         path_coords = self._path_to_coords(data.entry, data.path_dirs)
 
         state: Dict[str, object] = {
+            "mlx": mlx,
             "mlx_ptr": mlx_ptr,
             "window": window,
             "image": image,
@@ -99,7 +127,7 @@ class MlxViewer:
 
         self._draw(state)
 
-        self._mlx.mlx_string_put(
+        mlx.mlx_string_put(
             mlx_ptr,
             window,
             20,
@@ -107,7 +135,7 @@ class MlxViewer:
             0xFFFFFFFF,
             "ESC: quit | ENTER: toggle path | SPACE: random wall color",
         )
-        self._mlx.mlx_string_put(
+        mlx.mlx_string_put(
             mlx_ptr,
             window,
             20,
@@ -116,31 +144,26 @@ class MlxViewer:
             f"scale={state['scale']} offset=({state['off_x']},{state['off_y']})",
         )
 
-        self._mlx.mlx_key_hook(window, self._on_key, state)
-        self._mlx.mlx_loop(mlx_ptr)
+        mlx.mlx_key_hook(window, self._on_key, state)
+        mlx.mlx_loop(mlx_ptr)
 
     # ---------------- layout / autoscale ----------------
 
     def _compute_layout(self, win_w: int, img_h: int, grid_w: int, grid_h: int) -> Dict[str, int]:
         """
         Compute scale + offsets so the whole maze fits with padding and is centered.
-
-        We draw maze inside the image area (win_w x img_h).
         Each cell is scale x scale pixels.
         """
         usable_w = max(1, win_w - 2 * self._PADDING)
         usable_h = max(1, img_h - 2 * self._PADDING)
 
-        # scale to fit
         scale_w = usable_w // max(1, grid_w)
         scale_h = usable_h // max(1, grid_h)
         scale = max(self._MIN_SCALE, min(scale_w, scale_h))
 
-        # actual drawn area
         draw_w = grid_w * scale
         draw_h = grid_h * scale
 
-        # center inside usable rect
         off_x = self._PADDING + max(0, (usable_w - draw_w) // 2)
         off_y = self._PADDING + max(0, (usable_h - draw_h) // 2)
 
@@ -206,20 +229,24 @@ class MlxViewer:
     # ---------------- input ----------------
 
     def _on_key(self, keycode: int, state: Dict[str, object]) -> None:
+        mlx = state["mlx"]
         mlx_ptr = state["mlx_ptr"]
         window = state["window"]
 
-        if keycode == 65307:  # ESC
-            self._mlx.mlx_destroy_window(mlx_ptr, window)
-            self._mlx.mlx_loop_exit(mlx_ptr)
+        # ESC
+        if keycode == 65307:
+            mlx.mlx_destroy_window(mlx_ptr, window)
+            mlx.mlx_loop_exit(mlx_ptr)
             return
 
-        if keycode == 32:  # SPACE -> random wall color
+        # SPACE -> random wall color
+        if keycode == 32:
             state["wall_color"] = bytes(
                 [randint(0, 255), randint(0, 255), randint(0, 255), 255]
             )
 
-        if keycode == 65293:  # ENTER -> toggle path
+        # ENTER -> toggle path
+        if keycode == 65293:
             state["show_path"] = not bool(state["show_path"])
 
         self._draw(state)
@@ -227,12 +254,13 @@ class MlxViewer:
     # ---------------- drawing ----------------
 
     def _draw(self, state: Dict[str, object]) -> None:
+        mlx = state["mlx"]
         mlx_ptr = state["mlx_ptr"]
         window = state["window"]
         image = state["image"]
         image_address = state["image_address"]
-        size_line = int(state["size_line"])
 
+        size_line = int(state["size_line"])
         scale = int(state["scale"])
         off_x = int(state["off_x"])
         off_y = int(state["off_y"])
@@ -250,8 +278,16 @@ class MlxViewer:
         # path (cyan)
         if show_path:
             for px, py in path:
-                self._fill_cell(image_address, scale, size_line, px, py, off_x, off_y,
-                                bytes([0, 255, 255, 255]))
+                self._fill_cell(
+                    image_address=image_address,
+                    scale=scale,
+                    size_line=size_line,
+                    x=px,
+                    y=py,
+                    off_x=off_x,
+                    off_y=off_y,
+                    color=bytes([0, 255, 255, 255]),
+                )
 
         # start (red) / end (green)
         self._fill_cell(image_address, scale, size_line, entry[0], entry[1], off_x, off_y,
@@ -281,11 +317,19 @@ class MlxViewer:
                     off_y=off_y,
                 )
 
-        self._mlx.mlx_put_image_to_window(mlx_ptr, window, image, 0, 0)
+        mlx.mlx_put_image_to_window(mlx_ptr, window, image, 0, 0)
 
     @staticmethod
-    def _fill_cell(image_address, scale: int, size_line: int, x: int, y: int,
-                   off_x: int, off_y: int, color: bytes) -> None:
+    def _fill_cell(
+        image_address,
+        scale: int,
+        size_line: int,
+        x: int,
+        y: int,
+        off_x: int,
+        off_y: int,
+        color: bytes,
+    ) -> None:
         """
         Fill a scale x scale block at cell coordinates (x, y) with an offset.
         """

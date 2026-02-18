@@ -1,8 +1,0 @@
-# Files
-.env
-
-# Derectoris
-.venv/
-.idea/
-__pycache__/
-.Identifier

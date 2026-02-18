@@ -48,7 +48,7 @@ class Manager:
         self.writer = MazeWriter()
         self._last_path_dirs: str = ""
 
-        self.mlx_viewer = MlxViewer()
+        # self.mlx_viewer = MlxViewer()
 
     def run(self) -> None:
         self.renderer.render_all(self.grid, self.registry.current().name)
@@ -137,17 +137,14 @@ class Manager:
         self._rerender()
 
     def _handle_open_mlx(self) -> None:
-        """
-        Open MLX viewer reading from maze.txt.
-        If maze.txt doesn't exist yet, show a stub message.
-        """
         try:
-            self.mlx_viewer.open_from_txt(self.config)
+            viewer = MlxViewer()
+            viewer.open_from_txt(self.config)
         except Exception as exc:
             self._stub_action(f"MLX failed: {exc}", self.menu.CMD_OPEN_MLX)
         finally:
-            # after returning from MLX loop, redraw terminal UI
             self._rerender()
+
 
     # ---------------- solution ----------------
 

@@ -1,6 +1,8 @@
-# Кеш компілятора Python
-__pycache__/
-*.py[cod]
+# Files
+.env
 
-# Мої специфічні файли
+# Derectoris
+.venv/
+.idea/
+__pycache__/
 .Identifier
