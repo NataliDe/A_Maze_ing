@@ -1,6 +1,5 @@
 from .grid import Grid
 import random
-import time
 
 
 class OriginShift:
@@ -34,7 +33,8 @@ class OriginShift:
             # Внутри "4" (чаша) -> Вверх
             (1, 0): "north", (1, 1): "north",
             # Разрыв между "4" и "2" -> Вниз (Коллектор)
-            (3, 0): "south", (3, 1): "south", (3, 2): "south", (3, 3): "south", (3, 4): "south",
+            (3, 0): "south", (3, 1): "south",
+            (3, 2): "south", (3, 3): "south", (3, 4): "south",
             # Внутри "2" -> Влево
             (4, 1): "west", (5, 1): "west",
             # Низ "4" -> Вниз
@@ -99,7 +99,8 @@ class OriginShift:
         """Проверка: можно ли из (x,y) шагнуть в direction?"""
         dx, dy = self.deltas[direction]
         nx, ny = x + dx, y + dy
-        if not (0 <= nx < self.grid.grid_width and 0 <= ny < self.grid.grid_height):
+        if not (0 <= nx < self.grid.grid_width and
+                0 <= ny < self.grid.grid_height):
             return False
         if self.grid.matrix[ny][nx].forbidden:
             return False
@@ -124,7 +125,8 @@ class OriginShift:
 
         for direction, (dx, dy) in self.deltas.items():
             nx, ny = cell.cell_x + dx, cell.cell_y + dy
-            if 0 <= nx < self.grid.grid_width and 0 <= ny < self.grid.grid_height:
+            if (0 <= nx < self.grid.grid_width and
+                    0 <= ny < self.grid.grid_height):
                 neighbor = self.grid.matrix[ny][nx]
                 if not neighbor.forbidden:
                     candidates.append((neighbor, direction))
@@ -145,7 +147,8 @@ class OriginShift:
 
         if target.vector:
             dx, dy = self.deltas[target.vector]
-            old_neighbor = self.grid.matrix[target.cell_y + dy][target.cell_x + dx]
+            old_neighbor = (
+                self.grid.matrix)[target.cell_y + dy][target.cell_x + dx]
             self._close_wall(target, target.vector)
             updates.append(old_neighbor)
 
